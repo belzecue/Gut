@@ -19,11 +19,17 @@ func test_equals():
 	assert_eq(one, 1, 'one should equal one') # PASS
 	assert_eq('racecar', 'racecar') # PASS
 	assert_eq(node2, node1) # PASS
+	assert_eq([1, 2, 3], [1, 2, 3]) # PASS
+	var d1_pass = {'a':1}
+	var d2_pass = d1_pass
+	assert_eq(d1_pass, d2_pass) # PASS
 
 	gut.p('-- failing --')
 	assert_eq(1, 2) # FAIL
 	assert_eq('hello', 'world') # FAIL
 	assert_eq(self, node1) # FAIL
+	assert_eq([1, 'two', 3], [1, 2, 3, 4]) # FAIL
+	assert_eq({'a':1}, {'a':1}) # FAIL
 
 func test_not_equal():
 	var two = 2
@@ -106,6 +112,8 @@ func test_true():
 	gut.p('-- failing --')
 	assert_true(false) # FAIL
 	assert_true('a' == 'b') # FAIL
+	assert_true('b') # FAIL
+	assert_true(1)
 
 func test_false():
 	gut.p('-- passing --')
@@ -117,6 +125,9 @@ func test_false():
 	gut.p('-- failing --')
 	assert_false(true) # FAIL
 	assert_false('ABC' == 'ABC') # FAIL
+	assert_false(null) # FAIL
+	assert_false(0)
+
 
 func test_null():
 	gut.p('-- passing --')
@@ -145,6 +156,19 @@ func test_assert_between():
 	gut.p('-- failing --')
 	assert_between('a', 'b', 'c') # FAIL
 	assert_between(1, 5, 10) # FAIL
+
+
+func test_assert_not_between():
+	gut.p('-- passing --')
+	assert_not_between(1, 5, 10) # PASS
+	assert_not_between('a', 'b', 'd') # PASS
+	assert_not_between('d', 'b', 'd') # PASS
+	assert_not_between(10, 0, 10) # PASS
+	assert_not_between(-2, -2, 10) # PASS
+
+	gut.p('-- failing --')
+	assert_not_between(5, 0, 10, 'Five shouldnt be between 0 and 10') # FAIL
+	assert_not_between(0.25, -2.0, 4.0) # FAIL
 
 
 func test_has():
@@ -312,7 +336,7 @@ class MovingNode:
 
 func test_illustrate_yield():
 	var moving_node = MovingNode.new()
-	add_child(moving_node)
+	add_child_autofree(moving_node)
 	moving_node.set_position(Vector2(0, 0))
 
 	# While the yield happens, the node should move
@@ -349,7 +373,7 @@ class TimedSignaler:
 
 func test_illustrate_yield_to_with_less_time():
 	var t = TimedSignaler.new(5)
-	add_child(t)
+	add_child_autofree(t)
 	t.start()
 	yield(yield_to(t, 'the_signal', 1), YIELD)
 	# since we setup t to emit after 5 seconds, this will fail because we
@@ -358,7 +382,7 @@ func test_illustrate_yield_to_with_less_time():
 
 func test_illustrate_yield_to_with_more_time():
 	var t = TimedSignaler.new(1)
-	add_child(t)
+	add_child_autofree(t)
 	t.start()
 	yield(yield_to(t, 'the_signal', 5), YIELD)
 	# since we wait longer than it will take to emit the signal, this assert
@@ -621,7 +645,7 @@ func test_replace_node():
 	var DOUBLE_ME_SCENE = 'res://test/resources/doubler_test_objects/double_me_scene.tscn'
 
 	var scene = load(DOUBLE_ME_SCENE).instance()
-	add_child(scene)
+	add_child_autofree(scene)
 	var replace_label = Label.new()
 	replace_node(scene, 'Label', replace_label)
 
@@ -641,7 +665,7 @@ class Signaler:
 
 class Connector:
 	func connect_this():
-		pass	
+		pass
 	func  other_method():
 		pass
 
@@ -653,9 +677,169 @@ func test_assert_connected():
 	# Passing
 	assert_connected(signaler, connector, 'the_signal')
 	assert_connected(signaler, connector, 'the_signal', 'connect_this')
-	
+
 	# Failing
 	var foo = Connector.new()
 	assert_connected(signaler,  connector, 'the_signal', 'other_method')
 	assert_connected(signaler, connector, 'other_signal')
 	assert_connected(signaler, foo, 'the_signal')
+
+
+func test_shallow_array_compare_1():
+	var a1 = [
+		'a', 'b', 'c',
+		[1, 2, 3, 4],
+		{'a':1, 'b':2, 'c':3},
+		[{'a':1}, {'b':2}]
+	]
+	var a2 = [
+		'a', 2, 'c',
+		['a', 2, 3, 'd'],
+		{'a':11, 'b':12, 'c':13},
+		[{'a':'diff'}, {'b':2}]
+	]
+	var result = compare_shallow(a1, a2)
+	assert_true(result.are_equal, result.summary)
+
+
+func test_shallow_array_compare_2():
+	var a1 = [
+		[1, 2, 3, 4],
+		[[4, 5, 6], ['same'], [7, 8, 9]]
+	]
+	var a2 = [
+		["1", 2.0, 13],
+		[[14, 15, 16], ['same'], [17, 18, 19]]
+	]
+	var result = compare_deep(a1, a2)
+	gut.p(result.summary)
+
+	gut.p('Traversing differences:')
+	gut.p(result.differences[1].differences[2].differences[0])
+
+func test_nested_difference():
+	var v1 = {'a':{'b':{'c':{'d':1}}}}
+	var v2 = {'a':{'b':{'c':{'d':2}}}}
+	var result = compare_deep(v1, v2)
+	gut.p(result.summary)
+
+	gut.p('Traversing differences:')
+	gut.p(result.differences['a'].differences['b'].differences['c'])
+
+
+func test_mix_of_array_and_dictionaries_deep():
+	var a1 = [
+		'a', 'b', 'c',
+		[1, 2, 3, 4],
+		{'a':1, 'b':2, 'c':3},
+		[{'a':1}, {'b':2}]
+	]
+	var a2 = [
+		'a', 2, 'c',
+		['a', 2, 3, 'd'],
+		{'a':11, 'b':12, 'c':13},
+		[{'a':'diff'}, {'b':2}]
+	]
+	var result = compare_deep(a1, a2)
+	gut.p(result.summary)
+
+	gut.p('Traversing differences:')
+	gut.p(result.differences[5].differences[0].differences['a'])
+
+
+func test_assert_eq_shallow():
+	var complex_example = [
+		'a', 'b', 'c',
+		[1, 2, 3, 4],
+		{'a':1, 'b':2, 'c':3},
+		[{'a':1}, {'b':2}]
+	]
+
+	# Passing
+	assert_eq_shallow([1, 2, 3], [1, 2, 3])
+	assert_eq_shallow([1, [2, 3], 4], [1, [2, 3], 4])
+	var d1 = {'foo':'bar'}
+	assert_eq_shallow([1, 2, d1], [1, 2, d1])
+	assert_eq_shallow({'a':1}, {'a':1})
+	assert_eq_shallow({'a':[1, 2, 3, d1]}, {'a':[1, 2, 3, d1]})
+
+	var shallow_copy = complex_example.duplicate(false)
+	assert_eq_shallow(complex_example, shallow_copy)
+
+	# Failing
+	assert_eq_shallow([1, 2], [1, 2 ,3]) # missing index
+	assert_eq_shallow({'a':1}, {'a':1, 'b':2}) # missing key
+	assert_eq_shallow([1, 2], [1.0, 2.0]) # floats != ints
+	assert_eq_shallow([1, 2, {'a':1}], [1, 2, {'a':1}]) # compare [2] by ref
+	assert_eq_shallow({'a':1}, {'a':1.0}) # floats != ints
+	assert_eq_shallow({'a':1, 'b':{'c':1}}, {'a':1, 'b':{'c':1}}) # compare 'b' by ref
+
+	var deep_copy = complex_example.duplicate(true)
+	assert_eq_shallow(complex_example, deep_copy)
+
+
+
+func test_assert_eq_deep():
+	var complex_example = [
+		'a', 'b', 'c',
+		[1, 2, 3, 4],
+		{'a':1, 'b':2, 'c':3},
+		[{'a':1}, {'b':2}]
+	]
+
+	# Passing
+	assert_eq_deep([1, 2, {'a':1}], [1, 2, {'a':1}])
+	assert_eq_deep({'a':1, 'b':{'c':1}}, {'b':{'c':1}, 'a':1})
+
+	var shallow_copy  = complex_example.duplicate(false)
+	var deep_copy = complex_example.duplicate(true)
+	assert_eq_deep(complex_example, shallow_copy)
+	assert_eq_deep(complex_example, deep_copy)
+	assert_eq_deep(shallow_copy, deep_copy)
+
+	# Failing
+	assert_eq_shallow([1, 2], [1, 2 ,3]) # missing index
+	assert_eq_shallow({'a':1}, {'a':1, 'b':2}) # missing key
+	assert_eq_deep([1, 2, {'a':1}], [1, 2, {'a':1.0}]) # floats != ints
+
+
+var SetGetTestNode = load("res://test/resources/test_assert_setget_test_objects/test_node.gd")
+
+func test_assert_property():
+	gut.p('-- passing --')
+	assert_property(SetGetTestNode, 'has_both', 4, 9)
+	var test_node = SetGetTestNode.new()
+	assert_property(test_node, 'has_both', 4, 9)
+
+	gut.p('-- failing --')
+	assert_property(SetGetTestNode, 'has_setter', 2, 5) # missing getter
+	assert_property(SetGetTestNode, 'has_getter', 3, 7) # missing setter
+	assert_property(SetGetTestNode, 'has_both', 0, 10) # wrong default value
+	assert_property(SetGetTestNode, 'has_both_dnu_setget', 8,  10) # does  not use setget
+
+func test_assert_setget():
+	gut.p('-- passing --')
+	assert_setget(SetGetTestNode, 'has_both')
+	assert_setget(SetGetTestNode, 'has_setter', SETTER_ONLY)
+	assert_setget(SetGetTestNode, 'has_getter', GETTER_ONLY)
+	assert_setget(SetGetTestNode, 'non_default_both', '__set_default_both', '__get_default_both')
+	assert_setget(SetGetTestNode, 'non_default_getter', null, '__get_non_default_getter')
+	assert_setget(SetGetTestNode, 'non_default_setter', '__set_non_default_setter')
+
+	# These pass because it's not possible to check
+	# that a setter or getter does not exist
+	assert_setget(SetGetTestNode, 'has_both', SETTER_ONLY)
+	assert_setget(SetGetTestNode, 'has_both', GETTER_ONLY)
+
+
+	gut.p('-- failing --')
+	assert_setget(SetGetTestNode, 'no_setget')  # does not use setget
+	assert_setget(SetGetTestNode, 'has_setter') # missing getter
+	assert_setget(SetGetTestNode, 'has_getter') # missing setter
+	assert_setget(SetGetTestNode, 'has_both', 'wrong_name', 'wrong_name') # wrong names
+
+
+	# assert_setget(HealthBar, 'label') # FAIL => setter or getter has to be specified
+	# assert_setget(HealthBar, 'label', true) # FAIL => setter does not exist
+
+
